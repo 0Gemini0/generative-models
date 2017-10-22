@@ -86,18 +86,18 @@ D_fake, D_logit_fake = discriminator(G_sample)
 
 # Alternative losses:
 # -------------------
-# cross entropy loss instead of log loss
-D_loss_real = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-    logits=D_logit_real, labels=tf.ones_like(D_logit_real)))
-D_loss_fake = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-    logits=D_logit_fake, labels=tf.zeros_like(D_logit_fake)))
-D_loss = D_loss_real + D_loss_fake
-G_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-    logits=D_logit_fake, labels=tf.ones_like(D_logit_fake)))
 
-# minimize the loss
-D_solver = tf.train.AdamOptimizer().minimize(D_loss, var_list=theta_D)
-G_solver = tf.train.AdamOptimizer().minimize(G_loss, var_list=theta_G)
+# earth movers distance
+D_loss = -tf.reduce_mean(D_real - D_fake)
+G_loss = -tf.reduce_mean(D_fake)
+
+# minimize the loss, RMSprop for stability
+D_solver = tf.train.RMSPropOptimizer(learning_rate=0.00005).minimize(D_loss, var_list=theta_D)
+G_solver = tf.train.RMSPropOptimizer(learning_rate=0.00005).minimize(G_loss, var_list=theta_G)
+
+# clip weights
+c = tf.placeholder(tf.float32)
+clip_D = [p.assign(tf.clip_by_value(p, -c, c)) for p in theta_D]
 
 mb_size = 128
 Z_dim = 100
@@ -125,7 +125,8 @@ for it in range(1000000):
     X_mb, _ = mnist.train.next_batch(mb_size)
 
     # train the discriminator and generator. k = 1.
-    _, D_loss_curr = sess.run([D_solver, D_loss], feed_dict={X: X_mb, Z: sample_Z(mb_size, Z_dim)})
+    _, D_loss_curr, __ = sess.run([D_solver, D_loss, clip_D], feed_dict={
+                                  X: X_mb, Z: sample_Z(mb_size, Z_dim), c: 0.01})
     _, G_loss_curr = sess.run([G_solver, G_loss], feed_dict={Z: sample_Z(mb_size, Z_dim)})
 
     if it % 1000 == 0:
